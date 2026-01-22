@@ -8,12 +8,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 1. Dockerfile Config Scan (Official Action - No Install Needed)
+      # 1. Dockerfile Config Scan (Sirf Dockerfile likhein)
       - name: Run Trivy Config Scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'config'
-          scan-ref: 'frontend/Dockerfile'
+          scan-ref: 'Dockerfile' # Pehle 'frontend/Dockerfile' tha
           format: 'table'
           output: 'config_result.txt'
           severity: 'HIGH,CRITICAL'
@@ -21,9 +21,10 @@ jobs:
       # 2. Build Image
       - name: Build Image
         run: |
-          docker build -t symphony-infra:test -f frontend/Dockerfile .
+          # Yahan bhi path fix karein
+          docker build -t symphony-infra:test -f Dockerfile .
 
-      # 3. OS Vulnerabilities Scan (Official Action)
+      # 3. OS Vulnerabilities Scan
       - name: Run Trivy Image Scan
         uses: aquasecurity/trivy-action@master
         with:
@@ -38,9 +39,8 @@ jobs:
       - name: Notify Google Chat
         if: always()
         run: |
-          # Reports ko read karke env variable mein dalna
-          CONFIG_OUT=$(cat config_result.txt | head -c 1500)
-          OS_OUT=$(cat os_result.txt | head -c 1500)
+          CONFIG_OUT=$(cat config_result.txt | head -c 1500 || echo "No config issues")
+          OS_OUT=$(cat os_result.txt | head -c 1500 || echo "No OS issues")
           
           curl -X POST "${{ secrets.GOOGLE_CHAT_WEBHOOK }}" \
           -H 'Content-Type: application/json' \
