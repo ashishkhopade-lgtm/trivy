@@ -1,0 +1,31 @@
+name: Infra Security Scan
+on: [push]
+
+jobs:
+  infra_audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # A. Dockerfile Config Scan (Infra Settings)
+      - name: Dockerfile Config Scan
+        id: config_scan
+        run: |
+          trivy config --severity HIGH,CRITICAL --format table --output config_result.txt frontend/Dockerfile
+          echo "CONFIG_REPORT=$(cat config_result.txt | head -c 1500)" >> $GITHUB_ENV
+
+      # B. OS Vulnerabilities Scan (Infra Image)
+      - name: Build and OS Scan
+        run: |
+          docker build -t symphony-infra:test -f frontend/Dockerfile .
+          trivy image --severity HIGH,CRITICAL --vuln-type os --format table --output os_result.txt symphony-infra:test
+          echo "OS_REPORT=$(cat os_result.txt | head -c 1500)" >> $GITHUB_ENV
+
+      # C. Google Chat mein Notification bhejna
+      - name: Notify Google Chat
+        if: always() # Scan fail ho tab bhi message bhejo
+        run: |
+          curl -X POST "${{ secrets.GOOGLE_CHAT_WEBHOOK }}" \
+          -H 'Content-Type: application/json' \
+          -d "{\"text\": \"*Trivy Infra Scan Report*\n\n*Dockerfile Errors:* \n\`\`\`${{ env.CONFIG_REPORT }}\`\`\` \n\n*OS Bugs:* \n\`\`\`${{ env.OS_REPORT }}\`\`\"}"
