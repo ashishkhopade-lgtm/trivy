@@ -8,38 +8,40 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 1. Trivy Setup (Isse "command not found" error fix ho jayegi)
-      - name: Install Trivy
-        run: |
-          sudo apt-get install wget apt-transport-https gnupg lsb-release -y
-          wget -qO - https://aquasecurity.github.io/trivy-repo/dab/gpg.key | sudo apt-key add -
-          echo deb https://aquasecurity.github.io/trivy-repo/dab $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update
-          sudo apt-get install trivy -y
+      # 1. Dockerfile Config Scan (Official Action - No Install Needed)
+      - name: Run Trivy Config Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'frontend/Dockerfile'
+          format: 'table'
+          output: 'config_result.txt'
+          severity: 'HIGH,CRITICAL'
 
-      # 2. Dockerfile Config Scan
-      - name: Dockerfile Config Scan
-        id: config_scan
-        run: |
-          trivy config --severity HIGH,CRITICAL --format table --output config_result.txt frontend/Dockerfile
-          # Google Chat ke liye report prepare karna
-          echo "CONFIG_REPORT<<EOF" >> $GITHUB_ENV
-          cat config_result.txt | head -c 1500 >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      # 3. Build and OS Scan
-      - name: Build and OS Scan
+      # 2. Build Image
+      - name: Build Image
         run: |
           docker build -t symphony-infra:test -f frontend/Dockerfile .
-          trivy image --severity HIGH,CRITICAL --vuln-type os --format table --output os_result.txt symphony-infra:test
-          echo "OS_REPORT<<EOF" >> $GITHUB_ENV
-          cat os_result.txt | head -c 1500 >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+
+      # 3. OS Vulnerabilities Scan (Official Action)
+      - name: Run Trivy Image Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'symphony-infra:test'
+          scan-type: 'image'
+          vuln-type: 'os'
+          format: 'table'
+          output: 'os_result.txt'
+          severity: 'HIGH,CRITICAL'
 
       # 4. Notify Google Chat
       - name: Notify Google Chat
         if: always()
         run: |
+          # Reports ko read karke env variable mein dalna
+          CONFIG_OUT=$(cat config_result.txt | head -c 1500)
+          OS_OUT=$(cat os_result.txt | head -c 1500)
+          
           curl -X POST "${{ secrets.GOOGLE_CHAT_WEBHOOK }}" \
           -H 'Content-Type: application/json' \
-          -d "{\"text\": \"*Trivy Infra Scan Report*\n\n*Dockerfile Errors:* \n\`\`\`${{ env.CONFIG_REPORT }}\`\`\` \n\n*OS Bugs:* \n\`\`\`${{ env.OS_REPORT }}\`\`\"}"
+          -d "{\"text\": \"*Trivy Infra Scan Report*\n\n*Dockerfile Errors:* \n\`\`\`$CONFIG_OUT\`\`\` \n\n*OS Bugs:* \n\`\`\`$OS_OUT\`\`\"}"
